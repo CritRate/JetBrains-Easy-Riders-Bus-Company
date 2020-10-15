@@ -1,102 +1,25 @@
 import json
 import re
+from collections import defaultdict
 
-# data = [
-#     {
-#         "bus_id": 128,
-#         "stop_id": 1,
-#         "stop_name": "Prospekt Avenue",
-#         "next_stop": 3,
-#         "stop_type": "S",
-#         "a_time": "08:12"
-#     },
-#     {
-#         "bus_id": 128,
-#         "stop_id": 3,
-#         "stop_name": "Elm Street",
-#         "next_stop": 5,
-#         "stop_type": "",
-#         "a_time": "08:19"
-#     },
-#     {
-#         "bus_id": 128,
-#         "stop_id": 5,
-#         "stop_name": "Fifth Avenue",
-#         "next_stop": 7,
-#         "stop_type": "O",
-#         "a_time": "08:25"
-#     },
-#     {
-#         "bus_id": 128,
-#         "stop_id": 7,
-#         "stop_name": "Sesame Street",
-#         "next_stop": 0,
-#         "stop_type": "F",
-#         "a_time": "08:37"
-#     },
-#     {
-#         "bus_id": 256,
-#         "stop_id": 2,
-#         "stop_name": "Pilotow Street",
-#         "next_stop": 3,
-#         "stop_type": "S",
-#         "a_time": "09:20"
-#     },
-#     {
-#         "bus_id": 256,
-#         "stop_id": 3,
-#         "stop_name": "Elm Street",
-#         "next_stop": 6,
-#         "stop_type": "",
-#         "a_time": "09:45"
-#     },
-#     {
-#         "bus_id": 256,
-#         "stop_id": 6,
-#         "stop_name": "Sunset Boulevard",
-#         "next_stop": 7,
-#         "stop_type": "",
-#         "a_time": "09:59"
-#     },
-#     {
-#         "bus_id": 256,
-#         "stop_id": 7,
-#         "stop_name": "Sesame Street",
-#         "next_stop": 0,
-#         "stop_type": "F",
-#         "a_time": "10:12"
-#     },
-#     {
-#         "bus_id": 512,
-#         "stop_id": 4,
-#         "stop_name": "Bourbon Street",
-#         "next_stop": 6,
-#         "stop_type": "S",
-#         "a_time": "08:13"
-#     },
-#     {
-#         "bus_id": 512,
-#         "stop_id": 6,
-#         "stop_name": "Sunset Boulevard",
-#         "next_stop": 0,
-#         "stop_type": "F",
-#         "a_time": "08:16"
-#     }
-# ]
-
-stop_ids = [
-    'Prospekt Avenue',
-    'Pilotow Street',
-    'Elm Street',
-    'Bourbon Street',
-    'Fifth Avenue',
-    'Sunset Boulevard',
-    'Sesame Street'
+example_data = [
+    {
+        "bus_id": 128,
+        "stop_id": 1,
+        "stop_name": "Prospekt Avenue",
+        "next_stop": 3,
+        "stop_type": "S",
+        "a_time": "08:12"
+    },
+    {
+        "bus_id": 128,
+        "stop_id": 3,
+        "stop_name": "Elm Street",
+        "next_stop": 5,
+        "stop_type": "O",
+        "a_time": "08:19"
+    },
 ]
-
-line_128 = [1, 3, 6, 7]
-line_256 = [2, 3, 5, 7]
-line_512 = [4, 6]
 
 
 def check_time(time_string):
@@ -108,16 +31,72 @@ def check_stop_name(stop_name):
 
 
 def stop_bus_lines(stops):
-    stop_data = {}
+    stop_data = defaultdict(list)
     for stop in stops:
         for key, value in stop.items():
             if key == 'bus_id':
-                if value in stop_data:
-                    stop_data[value] += 1
-                else:
-                    stop_data[value] = 1
+                stop_data[value].append(stop)
                 break
     return stop_data
+
+
+def check_stop_data(stops):
+    result = {
+        'start': set(),
+        'transfer': defaultdict(list),
+        'stop': set(),
+        'error': ''
+    }
+    stop_data = stop_bus_lines(stops)
+    for line, stops in stop_data.items():
+        start_count = 0
+        stop_count = 0
+        for stop in stops:
+            if stop['stop_type'] == 'S':
+                result['start'].add(stop['stop_name'])
+                start_count += 1
+            elif stop['stop_type'] == 'F':
+                result['stop'].add(stop['stop_name'])
+                stop_count += 1
+            result['transfer'][stop['bus_id']].append(stop['stop_name'])
+
+        if start_count == 0 or start_count > 1 or stop_count == 0 or stop_count > 1:
+            result['error'] = f'There is no start or end stop for the line: {stops[0]["bus_id"]}.'
+            return result
+
+    intersection_stops = set()
+    for i, current_set in enumerate(result['transfer'].values()):
+        if i < len(result['transfer']) - 1:
+            for j, iter_set in enumerate(result['transfer'].values()):
+                if i != j:
+                    [intersection_stops.add(value) for value in set(current_set).intersection(set(iter_set))]
+
+    return {
+        'Start stops': sorted(result['start']),
+        'Transfer stops': sorted(intersection_stops),
+        'Finish stops': sorted(result['stop']),
+    }
+
+
+def check_bus_times(stops):
+    stop_data = stop_bus_lines(stops)
+
+    time_errors = []
+
+    for bus_stops in stop_data.values():
+        curr_time = None
+        for bus_stop in bus_stops:
+            if not curr_time:
+                curr_time = bus_stop['a_time']
+            else:
+                if curr_time < bus_stop['a_time']:
+                    curr_time = bus_stop['a_time']
+                else:
+                    time_errors.append(
+                        f'bus_id line {bus_stop["bus_id"]}: wrong time on station {bus_stop["stop_name"]}')
+                    break
+
+    return time_errors
 
 
 def check_stop(bus_id, stop_id, stop_name, next_stop, stop_type, a_time):
@@ -177,6 +156,40 @@ if __name__ == '__main__':
     # print(f'stop_type: {errors.get("stop_type")}')
     # print(f'a_time: {errors.get("a_time")}')
 
-    print('Line names and number of stops:')
-    for line, num in stop_bus_lines(json.loads(input())).items():
-        print(f'bus_id: {line}, stops: {num}')
+    # stage 3
+    # print('Line names and number of stops:')
+    # for line, num in stop_bus_lines(json.loads(input())).items():
+    #     print(f'bus_id: {line}, stops: {num}')
+
+    # stage 4
+    # stop_data = check_stop_data(json.loads(input()))
+    #
+    # if stop_data.get('error'):
+    #     print(stop_data['error'])
+    # else:
+    #     for key, items in stop_data.items():
+    #         print(f'{key}: {len(items)} {items}')
+
+    # stage 5
+    # time_errors = check_bus_times(json.loads(input()))
+    # if time_errors:
+    #     print('Arrival time test:')
+    #     for error in time_errors:
+    #         print(error)
+    # else:
+    #     print('OK')
+
+    # stage 6
+    data = json.loads(input())
+    bus_lines = check_stop_data(data)
+    on_demand_errors = set()
+    for stop in data:
+        if stop['stop_type'] == 'O':
+            if stop['stop_name'] in bus_lines['Start stops'] or stop['stop_name'] in bus_lines['Transfer stops'] \
+                    or stop['stop_name'] in bus_lines['Finish stops']:
+                on_demand_errors.add(stop['stop_name'])
+    print('On demand stops test:')
+    if on_demand_errors:
+        print(f'Wrong stop type: {sorted(list(on_demand_errors))}')
+    else:
+        print('OK')
